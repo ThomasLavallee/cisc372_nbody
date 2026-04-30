@@ -90,8 +90,7 @@ void printSystem(FILE* handle){
 	}
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
 	clock_t t0=clock();
 	int t_now;
 	//srand(time(NULL));
@@ -104,7 +103,7 @@ int main(int argc, char **argv)
 	printSystem(stdout);
 	#endif
 
-	// Allocate space on GPU for hVel, hPos, mass, and accel arrays
+	// Allocate space on GPU for hVel, hPos, and mass arrays
 	cudaMalloc( (void **)&d_hVel, sizeof(vector3) * NUMENTITIES);
 	cudaMalloc( (void **)&d_hPos, sizeof(vector3) * NUMENTITIES);
 	cudaMalloc( (void **)&d_mass, sizeof(double) * NUMENTITIES);
@@ -135,7 +134,7 @@ int main(int argc, char **argv)
 
 	freeHostMemory();
 
-	// Free hVel, hPos, mass, and accel arrays on the device
+	// Free hVel, hPos, and mass arrays on the device
 	cudaFree(d_hVel);
 	cudaFree(d_hPos);
 	cudaFree(d_mass);	
