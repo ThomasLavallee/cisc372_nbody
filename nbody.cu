@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
+#include <cuda_runtime.h>
 #include "vector.h"
 #include "config.h"
 #include "planets.h"
@@ -10,7 +11,7 @@
 // represents the objects in the system.  Global variables
 vector3 *hVel, *d_hVel;
 vector3 *hPos, *d_hPos;
-double *mass;
+double *mass, *d_mass;
 
 //initHostMemory: Create storage for numObjects entities in our system
 //Parameters: numObjects: number of objects to allocate
@@ -102,14 +103,40 @@ int main(int argc, char **argv)
 	#ifdef DEBUG
 	printSystem(stdout);
 	#endif
+
+	// Allocate space on GPU for hVel, hPos, mass, and accel arrays
+	cudaMalloc( (void **)&d_hVel, sizeof(vector3) * NUMENTITIES);
+	cudaMalloc( (void **)&d_hPos, sizeof(vector3) * NUMENTITIES);
+	cudaMalloc( (void **)&d_mass, sizeof(double) * NUMENTITIES);
+	
+	// Copy hVel, hPos, and mass arrays to device
+	cudaMemcpy(d_hVel, hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_hPos, hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_mass, mass, sizeof(double) * NUMENTITIES, cudaMemcpyHostToDevice);
+
+
+	// Loop calling compute
 	for (t_now=0;t_now<DURATION;t_now+=INTERVAL){
 		compute();
+		
+		// Make sure this time interval is done before computing the next one
+		cudaDeviceSynchronize();
 	}
+
+	// Copy hVel, hPos to host
+	cudaMemcpy(hVel, d_hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost);
+	cudaMemcpy(hPos, d_hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost);	
+
 	clock_t t1=clock()-t0;
-#ifdef DEBUG
+	#ifdef DEBUG
 	printSystem(stdout);
-#endif
+	#endif
 	printf("This took a total time of %f seconds\n",(double)t1/CLOCKS_PER_SEC);
 
 	freeHostMemory();
+
+	// Free hVel, hPos, mass, and accel arrays on the device
+	cudaFree(d_hVel);
+	cudaFree(d_hPos);
+	cudaFree(d_mass);	
 }
