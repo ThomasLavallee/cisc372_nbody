@@ -1,9 +1,25 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <math.h>
 #include <cuda_runtime.h>
 #include "vector.h"
 #include "config.h"
 #define BLOCKSIZE 256
+
+// The actual error-handling logic
+static inline void HandleError(cudaError_t err, const char *file, int line) {
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA Error: %s in %s at line %d\n", 
+                cudaGetErrorString(err), file, line);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// The macro that captures the current file and line number
+#define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
+
+
+
 
 
 /* Initializes the acceleration matrix for a given row
@@ -36,7 +52,7 @@ Returns: None
 Side Effects: Modifies the accels matrix in one cell
 */
 __global__ void computeAccelerations(vector3 **accels, vector3 *hPos, double *mass) {
-        // Calculate the row and column for the cell we are calculatin
+        // Calculate the row and column for the cell we are calculating
         int i = (blockIdx.x * blockDim.x) + threadIdx.x;
         int j = (blockIdx.y * blockDim.y) + threadIdx.y;
 
@@ -110,26 +126,34 @@ void compute(){
 
 	vector3 *d_values;
 	vector3 **d_accels;
-	cudaMalloc((void **)&d_values, sizeof(vector3)*NUMENTITIES*NUMENTITIES);
-	cudaMalloc((void **)&d_accels, sizeof(vector3 *) * NUMENTITIES);	
+	HANDLE_ERROR(cudaMalloc((void **)&d_values, sizeof(vector3)*NUMENTITIES*NUMENTITIES));
+	HANDLE_ERROR(cudaMalloc(&d_accels, sizeof(vector3 *) * NUMENTITIES));	
 
 	
 	// Initialize acceleration matrix in parallel
 	int numBlocks = (NUMENTITIES + BLOCKSIZE - 1) / BLOCKSIZE;
 	initializeAccelerationMatrix<<<numBlocks, BLOCKSIZE>>>(d_accels, d_values);
-	cudaDeviceSynchronize();
+	HANDLE_ERROR(cudaDeviceSynchronize());
 
 	// Compute acceleration matrix in parallel
 	dim3 dimBlock(16, 16);
 	dim3 dimGrid((NUMENTITIES + dimBlock.x - 1) / dimBlock.x, (NUMENTITIES + dimBlock.y - 1) / dimBlock.y);
 	computeAccelerations<<<dimGrid, dimBlock>>>(d_accels, d_hPos, d_mass);
-	cudaDeviceSynchronize();
+	HANDLE_ERROR(cudaDeviceSynchronize());
 
 	// Compute sum of acceleration matrixes row in parallel and update hVel and hPos
-	sumAccelerationRow<<<numBlocks, BLOCKSIZE>>>(d_accels, d_hPos, d_hVel);
-	cudaDeviceSynchronize();
+	sumAccelerationRow<<<numBlocks, BLOCKSIZE>>>(d_accels, d_hVel, d_hPos);
+	HANDLE_ERROR(cudaDeviceSynchronize());
+
+
+	// Print system after each iteration in DEBUG mode
+	//#ifdef DEBUG
+	//HANDLE_ERROR(cudaMemcpy(hPos, d_hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost));
+	//HANDLE_ERROR(cudaMemcpy(hVel, d_hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost));
+	//#endif
+	
 
 	// Free the acceleration matrix
-	cudaFree(d_values);
-	cudaFree(d_accels);	
+	HANDLE_ERROR(cudaFree(d_values));
+	HANDLE_ERROR(cudaFree(d_accels));	
 }
