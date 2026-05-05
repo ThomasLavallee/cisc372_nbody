@@ -47,6 +47,7 @@ __global__ void initializeAccelerationMatrix(vector3 **accels, vector3 *values) 
 Arguments:
 vector3 **accels, the acceleration matrix
 vector3 *hPos, the position array
+double *mass, the mass array
 
 Returns: None
 Side Effects: Modifies the accels matrix in one cell
@@ -63,6 +64,7 @@ __global__ void computeAccelerations(vector3 **accels, vector3 *hPos, double *ma
                         // Planet has 0 effect on its own acceleration
                         FILL_VECTOR(accels[i][j], 0, 0, 0);
                 } else {
+			// Calculate and update new acceleration for this cell
                         vector3 distance;
                         for (int k = 0; k < 3; k++) {
                                 distance[k] = hPos[i][k] - hPos[j][k];
@@ -105,7 +107,7 @@ __global__ void sumAccelerationRow(vector3 **accels, vector3 *hVel, vector3 *hPo
                 }
 
 
-                // Update the hVels and hPost arrays
+                // Update the hVels and hPos arrays
                 for (k = 0; k < 3; k++) {
                         hVel[row][k] += accel_sum[k] * INTERVAL;
                         hPos[row][k] += hVel[row][k] * INTERVAL;
@@ -118,30 +120,27 @@ __global__ void sumAccelerationRow(vector3 **accels, vector3 *hVel, vector3 *hPo
 //compute: Updates the positions and locations of the objects in the system based on gravity.
 //Parameters: None
 //Returns: None
-//Side Effect: Modifies the hPos and hVel arrays with the new positions and accelerations after 1 INTERVAL
+//Side Effect: Modifies the d_hPos and d_hVel arrays with the new positions and velocities after 1 INTERVAL
 void compute(){
-	// Create acceleration matrix of size NUMENTITIES x NUMENTITIES
-	//vector3* values=(vector3*)malloc(sizeof(vector3)*NUMENTITIES*NUMENTITIES);
-	//vector3** accels=(vector3**)malloc(sizeof(vector3*)*NUMENTITIES);
-
+	// Allocate space for acceleration matrix of size NUMENTITIES x NUMENTITIES
 	vector3 *d_values;
 	vector3 **d_accels;
 	HANDLE_ERROR(cudaMalloc((void **)&d_values, sizeof(vector3)*NUMENTITIES*NUMENTITIES));
 	HANDLE_ERROR(cudaMalloc(&d_accels, sizeof(vector3 *) * NUMENTITIES));	
 
 	
-	// Initialize acceleration matrix in parallel
+	// Initialize acceleration matrix in parallel (each thread initializes one row of accels matrix to its values row)
 	int numBlocks = (NUMENTITIES + BLOCKSIZE - 1) / BLOCKSIZE;
 	initializeAccelerationMatrix<<<numBlocks, BLOCKSIZE>>>(d_accels, d_values);
 	HANDLE_ERROR(cudaDeviceSynchronize());
 
-	// Compute acceleration matrix in parallel
+	// Compute acceleration matrix in parallel (each thread computes one cell of accels matrix)
 	dim3 dimBlock(16, 16);
 	dim3 dimGrid((NUMENTITIES + dimBlock.x - 1) / dimBlock.x, (NUMENTITIES + dimBlock.y - 1) / dimBlock.y);
 	computeAccelerations<<<dimGrid, dimBlock>>>(d_accels, d_hPos, d_mass);
 	HANDLE_ERROR(cudaDeviceSynchronize());
 
-	// Compute sum of acceleration matrixes row in parallel and update hVel and hPos
+	// Compute sum of acceleration matrix row in parallel and update hVel and hPos (each thread sums one row)
 	sumAccelerationRow<<<numBlocks, BLOCKSIZE>>>(d_accels, d_hVel, d_hPos);
 	HANDLE_ERROR(cudaDeviceSynchronize());
 

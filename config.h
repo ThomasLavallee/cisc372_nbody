@@ -1,4 +1,3 @@
-
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 #define NUMPLANETS      8
@@ -15,7 +14,7 @@
 #define MAX_MASS 938e18  //approximate mass of ceres.
 #define DURATION (10*YEAR)
 #define INTERVAL DAY
-//End Configurable
+////End Configurable
 
 #define NUMENTITIES (NUMPLANETS+NUMASTEROIDS+1)
 #endif

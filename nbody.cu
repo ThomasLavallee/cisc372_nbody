@@ -8,6 +8,20 @@
 #include "planets.h"
 #include "compute.h"
 
+
+// The actual error-handling logic
+static inline void HandleError(cudaError_t err, const char *file, int line) {
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA Error: %s in %s at line %d\n", 
+                cudaGetErrorString(err), file, line);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// The macro that captures the current file and line number
+#define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
+
+
 // represents the objects in the system.  Global variables
 vector3 *hVel, *d_hVel;
 vector3 *hPos, *d_hPos;
@@ -59,7 +73,7 @@ void planetFill(){
 //Side Effects: Fills count entries in our system starting at index start (0 based)
 void randomFill(int start, int count)
 {
-	int i, j, c = start;
+	int i, j;
 	for (i = start; i < start + count; i++)
 	{
 		for (j = 0; j < 3; j++)
@@ -104,27 +118,32 @@ int main(int argc, char **argv) {
 	#endif
 
 	// Allocate space on GPU for hVel, hPos, and mass arrays
-	cudaMalloc( (void **)&d_hVel, sizeof(vector3) * NUMENTITIES);
-	cudaMalloc( (void **)&d_hPos, sizeof(vector3) * NUMENTITIES);
-	cudaMalloc( (void **)&d_mass, sizeof(double) * NUMENTITIES);
+	HANDLE_ERROR(cudaMalloc( (void **)&d_hVel, sizeof(vector3) * NUMENTITIES));
+	HANDLE_ERROR(cudaMalloc( (void **)&d_hPos, sizeof(vector3) * NUMENTITIES));
+	HANDLE_ERROR(cudaMalloc( (void **)&d_mass, sizeof(double) * NUMENTITIES));
 	
 	// Copy hVel, hPos, and mass arrays to device
-	cudaMemcpy(d_hVel, hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_hPos, hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_mass, mass, sizeof(double) * NUMENTITIES, cudaMemcpyHostToDevice);
+	HANDLE_ERROR(cudaMemcpy(d_hVel, hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(d_hPos, hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(d_mass, mass, sizeof(double) * NUMENTITIES, cudaMemcpyHostToDevice));
 
 
 	// Loop calling compute
 	for (t_now=0;t_now<DURATION;t_now+=INTERVAL){
+		// Call compute on GPU to update positions and velocities for this iteration
 		compute();
-		
+
+		//#ifdef DEBUG
+		//printSystem(stdout);
+		//#endif
+	
 		// Make sure this time interval is done before computing the next one
-		cudaDeviceSynchronize();
+		HANDLE_ERROR(cudaDeviceSynchronize());
 	}
 
 	// Copy hVel, hPos to host
-	cudaMemcpy(hVel, d_hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost);
-	cudaMemcpy(hPos, d_hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost);	
+	HANDLE_ERROR(cudaMemcpy(hVel, d_hVel, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost));
+	HANDLE_ERROR(cudaMemcpy(hPos, d_hPos, sizeof(vector3) * NUMENTITIES, cudaMemcpyDeviceToHost));	
 
 	clock_t t1=clock()-t0;
 	#ifdef DEBUG
@@ -135,7 +154,7 @@ int main(int argc, char **argv) {
 	freeHostMemory();
 
 	// Free hVel, hPos, and mass arrays on the device
-	cudaFree(d_hVel);
-	cudaFree(d_hPos);
-	cudaFree(d_mass);	
+	HANDLE_ERROR(cudaFree(d_hVel));
+	HANDLE_ERROR(cudaFree(d_hPos));
+	HANDLE_ERROR(cudaFree(d_mass));	
 }
